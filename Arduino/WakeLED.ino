@@ -35,8 +35,8 @@ uint8_t decBlue = 0;
 PinWriter pinWriter(REDPIN, GREENPIN, BLUEPIN);
 
 void setup() {
-  //bitSet(TCCR1B, WGM12);  //might be needed if light flickers
-  TCCR1B |= (1 << WGM12);
+  //bitSet(TCCR1B, WGM12);  //might be needed if light flickers, SAME AS BELOW LINE
+  TCCR1B |= (1 << WGM12); //SAME AS ABOVE LINE
   Serial.begin(9600);
   Ethernet.begin(mac, ip);
   Udp.begin(localPort);
