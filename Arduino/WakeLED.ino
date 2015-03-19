@@ -18,12 +18,11 @@ WakeLED. Personal Arduino project
 byte mac[] = { 
   0x6C, 0xF0, 0x49, 0xB8, 0x37, 0x06 };
 IPAddress ip(192,168,178,85);
-
-EthernetServer server(80);
-unsigned int localPort = 8888;
+unsigned int localPort=8888;
 IPAddress timeServer(213, 84, 134, 226);
-const int NTP_PACKET_SIZE= 48;
-byte packetBuffer[ NTP_PACKET_SIZE];
+const int PACKET_SIZE= 48;
+
+char packetBuffer[PACKET_SIZE];
 EthernetUDP Udp;
 
 AlarmID_t alarmID;
@@ -37,24 +36,19 @@ PinWriter pinWriter(REDPIN, GREENPIN, BLUEPIN);
 void setup() {
   //bitSet(TCCR1B, WGM12);  //might be needed if light flickers, SAME AS BELOW LINE
   TCCR1B |= (1 << WGM12); //SAME AS ABOVE LINE
+  
   Serial.begin(9600);
   Ethernet.begin(mac, ip);
   Udp.begin(localPort);
+  
   ntp_client();
   
-  Alarm.timerRepeat(300,resync);  //resync clock every 5 min
+  Alarm.timerRepeat(86400,resync);  //resync clock every 24h
   
-  server.begin();
-  Serial.print("server is at ");
-  Serial.println(Ethernet.localIP());
 }   
 
 void loop() {
-  mainFunction();
-}
-
-void mainFunction(){
-  command = serverFunction();
+  command = udpFunction();
   
   if(command.indexOf('@') != -1){
     command = command.substring(command.indexOf('@'));
@@ -164,7 +158,7 @@ void alarm(){
 
    for(int i = 0; i < 6; i++){
     Alarm.delay(10);
-    if(serverFunction().startsWith("@end")){
+    if(udpFunction().startsWith("@end")){
       alarmClear();
       break;
     }
@@ -230,44 +224,15 @@ void printDigits(int digits)
   Serial.print(digits);
 }
 
-String serverFunction(){
+String udpFunction(){
   String str = "";
-  int flag = 0;
-  EthernetClient client = server.available();
-  if (client) {
-    Serial.println("\nnew client");
-    boolean currentLineIsBlank = true;
-    while (client.connected()) {
-      if (client.available()) {
-        char c = client.read();
-        if(c == '@'){  flag = 1;  }
-        if(flag){      str += c;  }
-        if(c == ' '){  flag = 0;  }
-        Serial.write(c);
-        if (c == '\n' && currentLineIsBlank) {
-          client.println("HTTP/1.1 200 OK");
-          client.println("Content-Type: text/html");
-          client.println("Connection: close"); 
-          client.println();
-          client.println("<!DOCTYPE HTML>");
-          client.println("<html>");
-          client.println(str);
-          client.println("</html>");
-          flag = 0;
-          break;
-        }
-        if (c == '\n') {
-          currentLineIsBlank = true;
-        }       else if (c != '\r') {
-          currentLineIsBlank = false;
-        }
-      }
-    }
-    Alarm.delay(1);
-    client.stop();
-    Serial.println("client disonnected\n");
-    return str;
+  int packetSize = Udp.parsePacket();
+  if(packetSize){
+    memset(packetBuffer, 0, PACKET_SIZE); 
+    Udp.read(packetBuffer, PACKET_SIZE);
+    str += packetBuffer;
   }
+  return str;
 }
 
 void resync(){
@@ -276,10 +241,10 @@ void resync(){
 
 unsigned long ntp_client(){
   int hourSet, minuteSet, secondSet;
-   sendNTPpacket(timeServer);
+  sendNTPpacket(timeServer);
   Alarm.delay(1000);  
   if ( Udp.parsePacket() ) {  
-    Udp.read(packetBuffer,NTP_PACKET_SIZE);
+    Udp.read(packetBuffer,PACKET_SIZE);
     unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
     unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);  
     unsigned long secsSince1900 = highWord << 16 | lowWord;  
@@ -298,8 +263,7 @@ unsigned long ntp_client(){
   }
 }
 
-int adjustDstEurope()
-{
+int adjustDstEurope(){
   // last sunday of march
   int beginDSTDate=  (31 - (5* year() /4 + 4) % 7);
   //Serial.println(beginDSTDate);
@@ -316,9 +280,8 @@ int adjustDstEurope()
   else return 3600; // nonDST europe = utc +1 hour
 }
 
-unsigned long sendNTPpacket(IPAddress& address)
-{
-  memset(packetBuffer, 0, NTP_PACKET_SIZE); 
+unsigned long sendNTPpacket(IPAddress& address){
+  memset(packetBuffer, 0, PACKET_SIZE); 
   packetBuffer[0] = 0b11100011; 
   packetBuffer[1] = 0;
   packetBuffer[2] = 6;
@@ -328,6 +291,6 @@ unsigned long sendNTPpacket(IPAddress& address)
   packetBuffer[14]  = 49;
   packetBuffer[15]  = 52;  
   Udp.beginPacket(address, 123);
-  Udp.write(packetBuffer,NTP_PACKET_SIZE);
+  Udp.write(packetBuffer,PACKET_SIZE);
   Udp.endPacket(); 
 }
